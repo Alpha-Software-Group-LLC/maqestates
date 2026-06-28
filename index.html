@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MAQEstates.com — Indian Lake Estates · Polk County, Florida · Managed by MAQ Group</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Jost:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,600&display=swap" rel="stylesheet"/>
+<!-- Leaflet — renders keyless Esri World Imagery satellite tiles for each property -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 :root {
   --forest:   #0D1F15;
@@ -472,6 +475,26 @@ nav.scrolled{
 .prop-card-img::after{
   content:'';position:absolute;bottom:0;left:0;right:0;height:60px;
   background:linear-gradient(transparent,var(--canopy));
+  pointer-events:none;z-index:2;
+}
+/* Satellite map (Esri World Imagery via Leaflet) shown for each lot */
+.prop-map{position:absolute;inset:0;width:100%;height:100%;z-index:0;background:linear-gradient(135deg,#0F2A1A,#1A3C24)}
+.prop-map .leaflet-control-container{display:none}
+.prop-map-fallback{
+  position:absolute;inset:0;z-index:1;
+  background:linear-gradient(135deg,#0F2A1A,#1A3C24);
+  display:flex;align-items:center;justify-content:center;font-size:56px;
+  transition:opacity 0.4s ease;
+}
+.prop-map-fallback.loading::after{
+  content:'';position:absolute;width:26px;height:26px;border-radius:50%;
+  border:2.5px solid rgba(200,130,58,0.25);border-top-color:var(--amber-l);
+  animation:spin 0.8s linear infinite;
+}
+.prop-map-attr{
+  position:absolute;bottom:4px;right:6px;z-index:3;
+  font-size:8px;color:rgba(244,249,245,0.55);font-family:'Jost';
+  text-shadow:0 1px 2px rgba(0,0,0,0.7);pointer-events:none;letter-spacing:0.02em;
 }
 .prop-card-body{padding:20px 22px 24px}
 .prop-address{
@@ -1941,12 +1964,12 @@ function renderProps() {
     card.style.animationDelay = (i % 9 * 0.05) + 's';
     card.innerHTML = `
       <div class="prop-card-img">
-        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#0F2A1A,#1A3C24);display:flex;align-items:center;justify-content:center;font-size:56px">
-          ${lot.emoji}
-        </div>
-        <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,26,16,0.8))"></div>
-        <div style="position:absolute;top:12px;left:12px"><span class="prop-tag">½ Acre Lot</span></div>
-        <div style="position:absolute;top:12px;right:12px;background:rgba(10,26,16,0.85);border:1px solid rgba(200,130,58,0.3);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--amber-l);font-family:'Libre Baskerville'">${lot.price}</div>
+        <div class="prop-map" id="map-${lot.id}"></div>
+        <div class="prop-map-fallback loading" id="mapfb-${lot.id}">${lot.emoji}</div>
+        <span class="prop-map-attr">Imagery © Esri</span>
+        <div style="position:absolute;inset:0;background:linear-gradient(to bottom,transparent 40%,rgba(10,26,16,0.8));z-index:2;pointer-events:none"></div>
+        <div style="position:absolute;top:12px;left:12px;z-index:3"><span class="prop-tag">½ Acre Lot</span></div>
+        <div style="position:absolute;top:12px;right:12px;z-index:3;background:rgba(10,26,16,0.85);border:1px solid rgba(200,130,58,0.3);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--amber-l);font-family:'Libre Baskerville'">${lot.price}</div>
       </div>
       <div class="prop-card-body">
         <div class="prop-address">${lot.addr}</div>
@@ -1963,9 +1986,90 @@ function renderProps() {
       </div>
     `;
     grid.appendChild(card);
+    initLotMap(lot);
   });
   document.getElementById('showMoreWrap').style.display = showing >= LOTS.length ? 'none' : 'block';
   document.getElementById('showMoreBtn').textContent = `Show All ${LOTS.length} Lots`;
+}
+
+// ── SATELLITE IMAGERY (keyless: Esri World Imagery via Leaflet) ──────────
+// Each lot's address is geocoded in the visitor's browser using Esri's
+// keyless World geocoder, then a static-style satellite map of the land is
+// rendered. Falls back to the lot emoji if Leaflet, geocoding, or tiles fail.
+const geoCache = {};   // address -> {lat,lng} | 'fail'  (avoids re-geocoding on re-render)
+const mapBuilt = {};   // lot.id -> true (avoids re-initialising an existing map)
+
+function showLotFallback(lot) {
+  const fb = document.getElementById('mapfb-' + lot.id);
+  if (fb) fb.classList.remove('loading');   // keep emoji visible, stop spinner
+}
+
+function buildLotMap(lot, lat, lng) {
+  if (mapBuilt[lot.id]) return;
+  const el = document.getElementById('map-' + lot.id);
+  if (!el) return;
+  try {
+    const map = L.map(el, {
+      center: [lat, lng], zoom: 17,
+      zoomControl: false, attributionControl: false,
+      dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
+      boxZoom: false, keyboard: false, touchZoom: false, tap: false,
+      fadeAnimation: false, zoomAnimation: false
+    });
+    const tiles = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, maxNativeZoom: 19 }
+    );
+    let tileFailed = false;
+    const reveal = () => {
+      const fb = document.getElementById('mapfb-' + lot.id);
+      if (fb && !tileFailed) fb.style.opacity = '0';   // reveal satellite once tiles paint
+    };
+    tiles.on('tileerror', () => { if (!tileFailed) { tileFailed = true; showLotFallback(lot); } });
+    tiles.on('load', reveal);
+    setTimeout(reveal, 1500);   // backup: reveal even if 'load' never fires (e.g. cached tiles)
+    tiles.addTo(map);
+    L.circleMarker([lat, lng], {
+      radius: 7, color: '#C8823A', weight: 3,
+      fillColor: '#E6A855', fillOpacity: 0.95
+    }).addTo(map);
+    setTimeout(() => map.invalidateSize(), 60);   // fix sizing for cards laid out in a grid
+    mapBuilt[lot.id] = true;
+  } catch (e) {
+    showLotFallback(lot);
+  }
+}
+
+function initLotMap(lot) {
+  if (typeof L === 'undefined') { showLotFallback(lot); return; }   // Leaflet CDN unavailable
+  if (lot.lat != null && lot.lng != null) { buildLotMap(lot, lot.lat, lot.lng); return; }
+
+  const key = lot.addr + ' ' + lot.city;
+  const cached = geoCache[key];
+  if (cached === 'fail') { showLotFallback(lot); return; }
+  if (cached) { buildLotMap(lot, cached.lat, cached.lng); return; }
+
+  // Strip a leading "0 " or "(Alt.)" placeholder house number so vacant-lot
+  // addresses still geocode to the right street within Indian Lake Estates.
+  const cleanAddr = lot.addr.replace(/^0\s+/, '').replace(/\s*\(alt\.?\)/i, '').trim();
+  const single = encodeURIComponent(cleanAddr + ', ' + lot.city);
+  const url = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates'
+            + '?f=json&maxLocations=1&outFields=Match_addr&singleLine=' + single;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(d => {
+      const c = d && d.candidates && d.candidates[0];
+      if (c && c.location) {
+        const loc = { lat: c.location.y, lng: c.location.x };
+        geoCache[key] = loc;
+        buildLotMap(lot, loc.lat, loc.lng);
+      } else {
+        geoCache[key] = 'fail';
+        showLotFallback(lot);
+      }
+    })
+    .catch(() => { geoCache[key] = 'fail'; showLotFallback(lot); });
 }
 
 function showMore() {
