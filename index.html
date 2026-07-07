@@ -888,6 +888,49 @@ footer{
   font-size:28px;margin:0 auto 20px;
 }
 
+/* ── DEMO / WAITLIST BANNER ────────── */
+.demo-banner{
+  position:fixed;bottom:0;left:0;right:0;z-index:150;
+  background:linear-gradient(180deg,rgba(13,31,21,0.92),rgba(10,26,16,0.98));
+  backdrop-filter:blur(16px);
+  border-top:1px solid rgba(200,130,58,0.35);
+  box-shadow:0 -8px 40px rgba(0,0,0,0.45);
+  display:flex;align-items:center;gap:12px;
+  padding:12px clamp(16px,4vw,48px);
+  transition:transform 0.45s cubic-bezier(0.2,0,0,1);
+}
+.demo-banner.hidden{transform:translateY(130%)}
+.demo-banner-inner{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  flex:1;justify-content:center;
+}
+.demo-banner-badge{
+  flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--amber-l);background:rgba(200,130,58,0.14);
+  border:1px solid rgba(200,130,58,0.35);border-radius:20px;padding:5px 12px;white-space:nowrap;
+}
+.demo-banner-text{font-size:13px;color:var(--text-m);line-height:1.5;max-width:660px}
+.demo-banner-text strong{color:var(--text)}
+.demo-banner-cta{
+  flex-shrink:0;padding:9px 20px;border-radius:30px;border:none;cursor:pointer;
+  font-family:'Jost';font-size:13px;font-weight:700;
+  background:linear-gradient(135deg,var(--amber),var(--amber-l));color:var(--forest);
+  box-shadow:0 4px 16px rgba(200,130,58,0.3);transition:all 0.2s;white-space:nowrap;
+}
+.demo-banner-cta:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(200,130,58,0.4)}
+.demo-banner-close{
+  flex-shrink:0;background:rgba(58,112,80,0.2);border:none;color:var(--text-m);
+  width:28px;height:28px;border-radius:50%;font-size:13px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all 0.2s;font-family:'Jost';
+}
+.demo-banner-close:hover{background:rgba(58,112,80,0.4);color:var(--text)}
+@media(max-width:640px){
+  .demo-banner{padding:10px 14px;gap:8px}
+  .demo-banner-inner{gap:10px}
+  .demo-banner-text{font-size:12px}
+  .demo-banner-cta{padding:8px 15px;font-size:12px}
+}
+
 /* ── RESPONSIVE ─────────────────────── */
 @media(max-width:900px){
   nav{padding:16px 24px}
@@ -904,6 +947,16 @@ footer{
 </style>
 </head>
 <body>
+
+<!-- ── DEMO / WAITLIST BANNER ─────────── -->
+<div class="demo-banner" id="demoBanner">
+  <div class="demo-banner-inner">
+    <span class="demo-banner-badge">🚧 Demo</span>
+    <span class="demo-banner-text">This site is an early <strong>prototype</strong> and not yet live for sales. Join the waitlist and we'll notify you the moment MAQEstates officially launches.</span>
+    <button class="demo-banner-cta" onclick="openWaitlist()">Join the Waitlist →</button>
+  </div>
+  <button class="demo-banner-close" onclick="dismissDemoBanner()" aria-label="Dismiss notice">✕</button>
+</div>
 
 <!-- ── NAV ────────────────────────────── -->
 <nav id="nav">
@@ -1919,6 +1972,31 @@ footer{
   </div>
 </div>
 
+<!-- ── WAITLIST MODAL ─────────────────── -->
+<div class="modal-overlay" id="waitlistModal" style="display:none" onclick="if(event.target===this)closeWaitlist()">
+  <div class="modal" style="max-width:440px">
+    <button class="modal-close" onclick="closeWaitlist()">✕</button>
+    <div id="waitlistFormWrap">
+      <div class="success-icon" style="background:rgba(200,130,58,0.14);border-color:var(--amber)">📬</div>
+      <h3 class="serif" style="font-size:24px;font-weight:400;margin-bottom:10px;text-align:center">Join the Waitlist</h3>
+      <p style="font-size:14px;color:var(--text-m);text-align:center;line-height:1.6;margin-bottom:22px">
+        We're putting the finishing touches on MAQEstates. Leave your email and you'll be the first to know when Indian Lake Estates lots are officially available.
+      </p>
+      <input class="form-input" type="email" id="waitlistEmail" placeholder="you@example.com" autocomplete="email" onkeydown="if(event.key==='Enter')submitWaitlist()"/>
+      <button class="btn-primary" id="waitlistBtn" style="width:100%;justify-content:center;display:flex;padding:14px" onclick="submitWaitlist()">Notify Me at Launch</button>
+      <p style="font-size:11px;color:var(--text-d);text-align:center;margin-top:12px">No spam — just one email when we go live.</p>
+    </div>
+    <div id="waitlistDoneWrap" style="display:none;text-align:center">
+      <div class="success-icon">🌿</div>
+      <h3 class="serif" style="font-size:24px;font-weight:400;margin-bottom:10px">You're on the list!</h3>
+      <p style="font-size:14px;color:var(--text-m);line-height:1.6;margin-bottom:24px">
+        Thank you — we'll email <strong id="waitlistEmailEcho" style="color:var(--amber-l)"></strong> the moment MAQEstates officially launches.
+      </p>
+      <button class="btn-primary" style="width:100%;justify-content:center;display:flex;padding:14px" onclick="closeWaitlist()">Continue Exploring</button>
+    </div>
+  </div>
+</div>
+
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
 // ── PROPERTIES DATA ────────────────────
 const LOTS = [
@@ -2145,6 +2223,60 @@ function submitForm() {
     });
   }, 1200);
 }
+
+// ── DEMO BANNER + WAITLIST ───────────────
+function dismissDemoBanner() {
+  const b = document.getElementById('demoBanner');
+  if (b) b.classList.add('hidden');
+  document.body.style.paddingBottom = '';
+  try { sessionStorage.setItem('maq_demo_dismissed', '1'); } catch (e) {}
+}
+function openWaitlist() {
+  document.getElementById('waitlistFormWrap').style.display = 'block';
+  document.getElementById('waitlistDoneWrap').style.display = 'none';
+  document.getElementById('waitlistModal').style.display = 'flex';
+  setTimeout(() => { const el = document.getElementById('waitlistEmail'); if (el) el.focus(); }, 50);
+}
+function closeWaitlist() {
+  document.getElementById('waitlistModal').style.display = 'none';
+}
+function submitWaitlist() {
+  const input = document.getElementById('waitlistEmail');
+  const email = (input.value || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    input.style.borderColor = 'var(--amber)';
+    input.focus();
+    return;
+  }
+  const btn = document.getElementById('waitlistBtn');
+  btn.textContent = 'Adding you…';
+  btn.disabled = true;
+  // Prototype: store the signup locally until a real backend is wired up.
+  try {
+    const list = JSON.parse(localStorage.getItem('maq_waitlist') || '[]');
+    if (!list.includes(email)) list.push(email);
+    localStorage.setItem('maq_waitlist', JSON.stringify(list));
+  } catch (e) {}
+  setTimeout(() => {
+    document.getElementById('waitlistEmailEcho').textContent = email;
+    document.getElementById('waitlistFormWrap').style.display = 'none';
+    document.getElementById('waitlistDoneWrap').style.display = 'block';
+    btn.textContent = 'Notify Me at Launch';
+    btn.disabled = false;
+    input.value = '';
+  }, 700);
+}
+// Reserve space so the fixed banner never covers the footer; honor session dismissal.
+(function initDemoBanner() {
+  const b = document.getElementById('demoBanner');
+  if (!b) return;
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem('maq_demo_dismissed') === '1'; } catch (e) {}
+  if (dismissed) { b.classList.add('hidden'); return; }
+  const reserve = () => { document.body.style.paddingBottom = b.offsetHeight + 'px'; };
+  reserve();
+  window.addEventListener('resize', reserve);
+})();
 
 // ── NAV SCROLL ───────────────────────────
 window.addEventListener('scroll', () => {
